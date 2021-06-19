@@ -1,0 +1,12 @@
+{
+  "name": "MovieEraDataScrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/ESMAT001/MovieEraDataScrapper.git",
+  "author": "ESMAT001 <esmat10.niazi@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "mongodb": "^3.6.9"
+  }
+}
