@@ -8,7 +8,7 @@ const { JSDOM } = require("jsdom");
 const scrapyJS = function (baseURL = {}, firstPage = 1, lastPage = 1, options = {}) {
     let threads = 0
     const maxThreads = options.maxThreads || 8
-    const retryLimit = options.retryLimit || 40
+    const retryLimit = options.retryLimit || 4
     const timeOutLimit = options.timeOutLimit * 1000 || 20 * 1000
     const englishLangRegx = /[a-zA-Z 0-9]/g
 
@@ -134,7 +134,7 @@ const scrapyJS = function (baseURL = {}, firstPage = 1, lastPage = 1, options = 
 
 
 
-    async function crawlSinglePage(url, page) {
+    async function crawlSinglePage(url, page = 1, shouldReturn = false) {
         // console.log('from', page, 'crawling', url)
         try {
 
@@ -154,18 +154,26 @@ const scrapyJS = function (baseURL = {}, firstPage = 1, lastPage = 1, options = 
                     if (err) throw err;
                 })
             }
+            if (shouldReturn) {
+                return {
+                    movie_name: movieName,
+                    download_links: downloadLinks
+                }
+            } else {
+                return callbacks.onCrawled({
+                    movie_name: movieName,
+                    download_links: downloadLinks
+                })
+            }
 
-            return callbacks.onCrawled({
-                movie_name: movieName,
-                download_links: downloadLinks
-            })
         } catch (error) {
-            callbacks.onError({
+            return callbacks.onError({
                 error: error,
+                fromSinglePageCrawler: true,
                 url,
                 page
             })
-            return crawlSinglePage(url, page)
+
         }
 
     }
@@ -243,12 +251,57 @@ const scrapyJS = function (baseURL = {}, firstPage = 1, lastPage = 1, options = 
     }
 
 
+    async function search(name, shouldReturn = false) {
+
+        name = name.trim()
+        const url = 'https://www.film2movie.asia/search/' + encodeURI(name)
+        console.log('searching', url)
+        try {
+            var html = await got(url, {
+                retry: { limit: retryLimit },
+                timeout: timeOutLimit
+            })
+        } catch (error) {
+            return callbacks.onError({
+                error,
+                url
+            })
+        }
+        const dom = new JSDOM(html.body);
+        console.log('searched main page')
+        let links = dom.window.document.querySelectorAll(options.mainPageLinkSelector)
+        if (links.length === 0) {
+            const notFoundRegx = /مورد درخواستی در این سایت وجود ندارد/
+            links = dom.window.document.querySelectorAll(options.notFoundSelector)
+            if (notFoundRegx.test(links[0].textContent)) {
+                fs.appendFileSync('./notFound.txt', name + "\n")
+                console.log(name, 'not found')
+            }
+        } else {
+            const movieNameRegx = new RegExp(name, 'i')
+            for (let index = 0; index < links.length; index++) {
+                if (movieNameRegx.test(decodeURI(links[index].href).replaceAll("-", ' '))) {
+                    console.log('found', decodeURI(links[index].href))
+                    const returnedVal = await crawlSinglePage(links[index].href, 2, shouldReturn)
+                    if (shouldReturn) {
+                        return returnedVal
+                    }
+                    return;
+                }
+            }
+            fs.appendFileSync('./notFound.txt', name + "\n")
+            console.log(name, 'not found')
+        }
+
+    }
+
 
     return {
         crawl,
         on,
         override,
-        crawlSinglePage
+        crawlSinglePage,
+        search,
     }
 }
 
